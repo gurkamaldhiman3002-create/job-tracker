@@ -1,23 +1,28 @@
-import Link from "next/link";
-
 export default function Home() {
   return (
-    <main className="p-10">
-      <h1 className="text-3xl font-bold mb-6">Job Tracker App</h1>
-      <p className="mb-6">Manage your job applications step by step.</p>
+    <main className="p-10 text-center">
+      <h1 className="text-4xl font-bold mb-4">
+        Job Tracker Dashboard
+      </h1>
 
-      <div className="space-y-3">
-        <div>
-          <Link href="/add-job" className="text-blue-600 underline">
-            Go to Add Job
-          </Link>
-        </div>
+      <p className="text-gray-600 mb-8">
+        Track your job applications, interviews, and offers in one place.
+      </p>
 
-        <div>
-          <Link href="/jobs" className="text-blue-600 underline">
-            Go to All Jobs
-          </Link>
-        </div>
+      <div className="flex justify-center gap-4">
+        <a
+          href="/add-job"
+          className="bg-blue-600 text-white px-6 py-3 rounded"
+        >
+          Add Job
+        </a>
+
+        <a
+          href="/jobs"
+          className="bg-gray-800 text-white px-6 py-3 rounded"
+        >
+          View Jobs
+        </a>
       </div>
     </main>
   );
