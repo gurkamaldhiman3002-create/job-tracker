@@ -3,6 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 type Job = {
   id: string;
@@ -13,15 +23,20 @@ type Job = {
   job_link: string;
   date_applied: string;
   recruiter: string;
+  source: string;
   notes: string;
+  user_id: string;
 };
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [sourceFilter, setSourceFilter] = useState("All");
+
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
 
   const [editCompany, setEditCompany] = useState("");
@@ -40,9 +55,22 @@ export default function JobsPage() {
     setLoading(true);
     setErrorMessage("");
 
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      setJobs([]);
+      setErrorMessage("You must be logged in to view your jobs.");
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("jobs")
       .select("*")
+      .eq("user_id", user.id)
       .order("date_applied", { ascending: false });
 
     if (error) {
@@ -57,6 +85,11 @@ export default function JobsPage() {
   };
 
   const handleDelete = async (id: string) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this job?"
+    );
+    if (!confirmed) return;
+
     const { error } = await supabase.from("jobs").delete().eq("id", id);
 
     if (error) {
@@ -68,10 +101,10 @@ export default function JobsPage() {
     fetchJobs();
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
+  const handleStatusChange = async (id: string, status: string) => {
     const { error } = await supabase
       .from("jobs")
-      .update({ status: newStatus })
+      .update({ status })
       .eq("id", id);
 
     if (error) {
@@ -122,6 +155,110 @@ export default function JobsPage() {
     }
   };
 
+  const totalJobs = jobs.length;
+  const interviewJobs = jobs.filter((j) => j.status === "Interview").length;
+  const rejectedJobs = jobs.filter((j) => j.status === "Rejected").length;
+  const offerJobs = jobs.filter((j) => j.status === "Offer").length;
+
+  const interviewRate =
+    totalJobs > 0 ? ((interviewJobs / totalJobs) * 100).toFixed(1) : "0";
+
+  const rejectionRate =
+    totalJobs > 0 ? ((rejectedJobs / totalJobs) * 100).toFixed(1) : "0";
+
+  const offerRate =
+    totalJobs > 0 ? ((offerJobs / totalJobs) * 100).toFixed(1) : "0";
+
+  const chartData = [
+    {
+      name: "Applied",
+      value: jobs.filter((j) => j.status === "Applied").length,
+    },
+    {
+      name: "Interview",
+      value: jobs.filter((j) => j.status === "Interview").length,
+    },
+    {
+      name: "Rejected",
+      value: jobs.filter((j) => j.status === "Rejected").length,
+    },
+    {
+      name: "Offer",
+      value: jobs.filter((j) => j.status === "Offer").length,
+    },
+  ];
+
+  const applicationsByDate: Record<string, number> = {};
+
+  jobs.forEach((job) => {
+    const date = job.date_applied || "No Date";
+
+    if (applicationsByDate[date]) {
+      applicationsByDate[date] += 1;
+    } else {
+      applicationsByDate[date] = 1;
+    }
+  });
+
+  const timelineData = Object.entries(applicationsByDate).map(
+    ([date, count]) => ({
+      date,
+      count,
+    })
+  );
+
+  const sourceCounts: Record<string, number> = {};
+
+  jobs.forEach((job) => {
+    const source = job.source || "Unknown";
+
+    if (sourceCounts[source]) {
+      sourceCounts[source] += 1;
+    } else {
+      sourceCounts[source] = 1;
+    }
+  });
+
+  const sourceChartData = Object.entries(sourceCounts).map(([name, value]) => ({
+    name,
+    value,
+  }));
+
+  const sourceInsights = Object.entries(sourceCounts).map(([source, total]) => {
+  const jobsFromSource = jobs.filter(
+    (job) => (job.source || "Unknown") === source
+  );
+
+  const interviewsFromSource = jobsFromSource.filter(
+    (job) => job.status === "Interview"
+  ).length;
+
+  const offersFromSource = jobsFromSource.filter(
+    (job) => job.status === "Offer"
+  ).length;
+
+  const interviewRate =
+    total > 0 ? ((interviewsFromSource / total) * 100).toFixed(1) : "0";
+
+  return {
+    source,
+    total,
+    interviews: interviewsFromSource,
+    offers: offersFromSource,
+    interviewRate,
+  };
+});
+
+const bestSource =
+  sourceInsights.length > 0
+    ? sourceInsights.reduce((best, current) => {
+        return parseFloat(current.interviewRate) >
+          parseFloat(best.interviewRate)
+          ? current
+          : best;
+      })
+    : { source: "None", interviewRate: "0" };
+
   const filteredJobs = jobs.filter((job) => {
     const matchesSearch =
       job.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -130,55 +267,42 @@ export default function JobsPage() {
     const matchesStatus =
       statusFilter === "All" || job.status === statusFilter;
 
-    return matchesSearch && matchesStatus;
+    const matchesSource =
+      sourceFilter === "All" || job.source === sourceFilter;
+
+    return matchesSearch && matchesStatus && matchesSource;
   });
 
-  const totalJobs = jobs.length;
-  const appliedJobs = jobs.filter((job) => job.status === "Applied").length;
-  const interviewJobs = jobs.filter((job) => job.status === "Interview").length;
-  const rejectedJobs = jobs.filter((job) => job.status === "Rejected").length;
-  const offerJobs = jobs.filter((job) => job.status === "Offer").length;
-
   return (
-    <main className="p-10 max-w-3xl mx-auto">
-      <div className="mb-6 flex gap-4">
+    <main className="p-10 max-w-4xl mx-auto">
+      <div className="mb-6 flex gap-4 flex-wrap">
         <Link href="/" className="text-blue-600 underline">
           Home
         </Link>
         <Link href="/add-job" className="text-blue-600 underline">
           Add Job
         </Link>
-        <Link href="/jobs" className="text-blue-600 underline">
-          All Jobs
+        <Link href="/auth" className="text-blue-600 underline">
+          Login
         </Link>
       </div>
 
-      <h1 className="text-3xl font-bold mb-6">All Jobs</h1>
+      <h1 className="text-3xl font-bold mb-6">Your Jobs</h1>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <div className="border rounded p-4">
-          <p className="text-sm text-gray-600">Total Jobs</p>
-          <h2 className="text-2xl font-bold">{totalJobs}</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="border p-4 rounded">
+          <p className="text-sm text-gray-600">Interview Rate</p>
+          <h2 className="text-2xl font-bold">{interviewRate}%</h2>
         </div>
 
-        <div className="border rounded p-4">
-          <p className="text-sm text-gray-600">Applied</p>
-          <h2 className="text-2xl font-bold">{appliedJobs}</h2>
+        <div className="border p-4 rounded">
+          <p className="text-sm text-gray-600">Rejection Rate</p>
+          <h2 className="text-2xl font-bold">{rejectionRate}%</h2>
         </div>
 
-        <div className="border rounded p-4">
-          <p className="text-sm text-gray-600">Interview</p>
-          <h2 className="text-2xl font-bold">{interviewJobs}</h2>
-        </div>
-
-        <div className="border rounded p-4">
-          <p className="text-sm text-gray-600">Rejected</p>
-          <h2 className="text-2xl font-bold">{rejectedJobs}</h2>
-        </div>
-
-        <div className="border rounded p-4">
-          <p className="text-sm text-gray-600">Offer</p>
-          <h2 className="text-2xl font-bold">{offerJobs}</h2>
+        <div className="border p-4 rounded">
+          <p className="text-sm text-gray-600">Offer Rate</p>
+          <h2 className="text-2xl font-bold">{offerRate}%</h2>
         </div>
       </div>
 
@@ -202,10 +326,91 @@ export default function JobsPage() {
           <option>Rejected</option>
           <option>Offer</option>
         </select>
+
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          className="w-full border p-3 rounded"
+        >
+          <option>All</option>
+          <option>LinkedIn</option>
+          <option>Indeed</option>
+          <option>Company Website</option>
+          <option>Referral</option>
+          <option>Recruiter Outreach</option>
+          <option>Other</option>
+          <option>Unknown</option>
+        </select>
       </div>
 
+      <div className="border p-4 rounded mb-6">
+        <h2 className="text-lg font-semibold mb-4">
+          Application Status Overview
+        </h2>
+
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={chartData}>
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey="value" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="border p-4 rounded mb-6">
+        <h2 className="text-lg font-semibold mb-4">Applications Timeline</h2>
+
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={timelineData}>
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip />
+            <Line type="monotone" dataKey="count" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="border p-4 rounded mb-6">
+        <h2 className="text-lg font-semibold mb-4">Applications by Source</h2>
+
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={sourceChartData}>
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey="value" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+    <div className="border p-4 rounded mb-6 bg-green-50">
+      <h2 className="text-lg font-semibold mb-2">Top Performing Source</h2>
+
+      <p className="text-sm">
+        Your best source is <strong>{bestSource.source}</strong> with an interview
+        rate of <strong>{bestSource.interviewRate}%</strong>
+      </p>
+    </div>
+
+      <div className="border p-4 rounded mb-6">
+  <h2 className="text-lg font-semibold mb-4">Source Success Insights</h2>
+
+  <div className="space-y-3">
+        {sourceInsights.map((item) => (
+          <div key={item.source} className="border p-3 rounded">
+            <h3 className="font-bold">{item.source}</h3>
+            <p className="text-sm">Applications: {item.total}</p>
+            <p className="text-sm">Interviews: {item.interviews}</p>
+            <p className="text-sm">Offers: {item.offers}</p>
+            <p className="text-sm">Interview Rate: {item.interviewRate}%</p>
+          </div>
+        ))}
+      </div>
+    </div>
+
       {loading ? (
-        <p>Loading jobs...</p>
+        <p>Loading...</p>
       ) : errorMessage ? (
         <p>{errorMessage}</p>
       ) : filteredJobs.length === 0 ? (
@@ -213,7 +418,10 @@ export default function JobsPage() {
       ) : (
         <div className="space-y-4">
           {filteredJobs.map((job) => (
-            <div key={job.id} className="border p-5 rounded-lg shadow-sm bg-white">
+            <div
+              key={job.id}
+              className="border p-5 rounded-lg shadow-sm bg-white"
+            >
               <h2 className="text-2xl font-bold">{job.company}</h2>
 
               <span
@@ -225,10 +433,22 @@ export default function JobsPage() {
               </span>
 
               <div className="mt-3 space-y-1 text-sm">
-                <p><strong>Role:</strong> {job.role}</p>
-                <p><strong>Location:</strong> {job.location || "Not provided"}</p>
-                <p><strong>Recruiter:</strong> {job.recruiter || "Not provided"}</p>
-                <p><strong>Date Applied:</strong> {job.date_applied || "Not provided"}</p>
+                <p>
+                  <strong>Role:</strong> {job.role}
+                </p>
+                <p>
+                  <strong>Location:</strong> {job.location || "Not provided"}
+                </p>
+                <p>
+                  <strong>Recruiter:</strong> {job.recruiter || "Not provided"}
+                </p>
+                <p>
+                  <strong>Source:</strong> {job.source || "Not provided"}
+                </p>
+                <p>
+                  <strong>Date Applied:</strong>{" "}
+                  {job.date_applied || "Not provided"}
+                </p>
               </div>
 
               <div className="mt-3">
@@ -251,7 +471,9 @@ export default function JobsPage() {
 
               <div className="mt-3">
                 <p className="font-semibold">Notes:</p>
-                <p className="text-sm text-gray-700">{job.notes || "Not provided"}</p>
+                <p className="text-sm text-gray-700">
+                  {job.notes || "Not provided"}
+                </p>
               </div>
 
               <div className="mt-3">
@@ -343,7 +565,7 @@ export default function JobsPage() {
                 </div>
               )}
 
-              <div className="mt-4 flex gap-3">
+              <div className="mt-4 flex gap-3 flex-wrap">
                 <button
                   onClick={() => {
                     setEditingJobId(job.id);
@@ -361,14 +583,7 @@ export default function JobsPage() {
                 </button>
 
                 <button
-                  onClick={() => {
-                    const confirmed = window.confirm(
-                      "Are you sure you want to delete this job?"
-                    );
-                    if (confirmed) {
-                      handleDelete(job.id);
-                    }
-                  }}
+                  onClick={() => handleDelete(job.id)}
                   className="bg-red-600 text-white px-4 py-2 rounded"
                 >
                   Delete
@@ -377,7 +592,7 @@ export default function JobsPage() {
             </div>
           ))}
         </div>
-      )}
+      )} 
     </main>
   );
 }
