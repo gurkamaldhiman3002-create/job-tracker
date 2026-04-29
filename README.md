@@ -17,7 +17,7 @@ https://github.com/gurkamaldhiman3002-create/job-tracker
 - Secure user authentication for personalized data
 
 ## 📊 Metrics
-- Tracked 100+ job applications using the platform
+- Tracked 25+ job applications using the platform
 - Built analytics to monitor application trends and interview conversion
 - Identified top-performing job sources based on outcomes
 
@@ -28,8 +28,15 @@ https://github.com/gurkamaldhiman3002-create/job-tracker
 - Version Control: GitHub
 
 ## ⚙️ Installation
-```bash
 git clone https://github.com/gurkamaldhiman3002-create/job-tracker
 cd job-tracker
 npm install
 npm run dev
+
+## 📌 Future Improvements
+- Recruiter response tracking
+- Advanced analytics dashboard
+- Email notifications and reminders
+
+## 👤 Author
+Gurkamal Dhiman
